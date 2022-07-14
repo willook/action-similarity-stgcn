@@ -9,6 +9,23 @@ from pathlib import Path
 import numpy as np
 from glob import glob
 
+def normalize_1080p_to_ntu_distribution(x_labels):
+    # 1080p: 1920 x 1080
+    # NTU: max(3.209906 1.728893 5.110941), min(-2.834219 -2.15311 0.0)
+    x_max_o, x_min_o = 1920, 0 # origin 1080p
+    y_max_o, y_min_o = 1080, 0 # origin 1080p
+    
+    x_max_n, x_min_n = 3.2, -2.8
+    y_max_n, y_min_n = 1.7, -2.1
+    
+    x_rate = (x_max_n - x_min_n)/(x_max_o - x_min_o)
+    y_rate = (y_max_n - y_min_n)/(y_max_o - y_min_o)
+    
+    x_labels[:,:,:,0] = (x_labels[:,:,:,0] - x_min_o) * x_rate + x_min_n
+    x_labels[:,:,:,1] = (x_labels[:,:,:,1] - y_min_o) * y_rate + y_min_n
+    
+    return x_labels
+
 def sorted_sample(x: List, size: int):
     assert len(x) >= size, f"Input list should be larger than sample size({size}), but {len(x)}"
     sorted_list = [
@@ -50,7 +67,7 @@ def save_file(file_name: str, func, *args, **kwargs):
         pickle.dump(data, f)
     return data
 
-def save_embeddings(db: Dict, key: str = 'default', embeddings_dir = "data/embeddings"):
+def save_embeddings(db: Dict, embeddings_dir = "data/embeddings", key: str = 'default'):
     embeddings_dir = Path(embeddings_dir)
     if not os.path.exists(key, embeddings_dir):
         os.mkdir(embeddings_dir)
@@ -72,7 +89,7 @@ def save_embeddings(db: Dict, key: str = 'default', embeddings_dir = "data/embed
     with open(embeddings_dir / "readme.md", 'a') as f:
         f.write(f"saved embeddings with key = {key}\n")
             
-def load_embeddings(key: str = 'default', embeddings_dir = "data/embeddings"): 
+def load_embeddings(embeddings_dir = "data/embeddings", key: str = 'default'): 
     embeddings_dir = Path(embeddings_dir)
     std_db = {}
     for embedding_file in glob(f'{embeddings_dir}/*'):
@@ -85,7 +102,7 @@ def load_embeddings(key: str = 'default', embeddings_dir = "data/embeddings"):
             std_db[action_idx] = embeddings_dict[key]
     return std_db 
 
-def exist_embeddings(key: str = 'default', embeddings_dir = "data/embeddings"):
+def exist_embeddings(embeddings_dir = "data/embeddings", key: str = 'default'):
     embeddings_dir = Path(embeddings_dir)
     exist_flags = []
     for embedding_file in glob(f'{embeddings_dir}/*'):
