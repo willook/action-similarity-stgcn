@@ -15,11 +15,13 @@ class Predictor:
         self, 
         std_db: ActionDatabase,
         k_neighbors: int = 1,
-        min_frames: int = 32
+        min_frames: int = 32,
+        threshold: float = 0.5
     ):
         self.std_db = std_db
         self.min_frames = min_frames
         self.k_neighbors = k_neighbors
+        self.threshold = threshold
 
     def valid_frames(
         self,
@@ -115,23 +117,22 @@ class Predictor:
     def make_prediction(
         self,
         id: int,
-        annotations: List[Dict],
+        annotations: List[torch.Tensor],
         action_label: str,
         score: float):
 
         # 예측에 사용한 첫번째 프레임의 정보
-        first_annotation = annotations[0]
+        #first_annotation = annotations[0]
         prediction = {}
         prediction['id'] = id
         if score >= self.threshold:
             actions = [{'label': action_label, 'score': score}]
         else:
             actions = []
-
         prediction['predictions'] = [{
-            'frame': first_annotation['frame'],
-            'box': first_annotation['keypoints']['box'],
-            'score': first_annotation['keypoints']['score'],
+            'frame': None, # first_annotation['frame'],
+            'box': None, # first_annotation['keypoints']['box'],
+            'score': None, # first_annotation['keypoints']['score'],
             'actions': actions
         }]
         
