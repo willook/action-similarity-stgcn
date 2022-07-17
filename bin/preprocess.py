@@ -22,6 +22,7 @@ def main(args):
     # config.data_dir = "experiments_data/data_stgcn/"
     # model_path= Path(config.data_dir) / 'model-80.pkl'
     # config.data_dir = "experiments_data/data_triplet/"
+    min_frames = 32
     data_path = Path(args.data_dir)
     embedding_path = data_path / 'embeddings'
     model_path= data_path / 'models' / 'model-best.pkl'
@@ -46,20 +47,14 @@ def main(args):
             keypoints_by_id = cache_file(video_filepath, extract_keypoints, 
                 *(video_filepath,), **{'fps':30,})
             id = take_best_id(keypoints_by_id)
-            x_label = keypoints_to_tensor(keypoints_by_id[id])
-            x_max = max(x_max, x_label[:,:,0].max())
-            x_min = min(x_min, x_label[:,:,0].min())
-            
-            y_max = max(y_max, x_label[:,:,1].max())
-            y_min = min(y_min, x_label[:,:,1].min())
-            
-            x_labels, y_labels, = normalize_1080p_to_ntu_distribution(x_labels, y_labels)
-    
-            #embedding = predictor.encode(x_label.to(device))
-            #db[action_idx].append(embedding)
-    print(f"x_max={x_max}, x_min={x_min}, y_max={y_max}, y_min={y_min}")
-    
-    breakpoint()
+            if len(keypoints_by_id[id]) < min_frames:
+                print(f"[Warning] The model need 32 keypoints at least but, {len(keypoints_by_id[id])} {video_filepath}")
+                continue
+            x_labels = keypoints_to_tensor(keypoints_by_id[id])
+            print(x_labels.shape)
+            x_labels = normalize_1080p_to_ntu_distribution(x_labels)
+            db[action_idx].append(x_labels)
+
     for key, items in db.items():
         print(f"[{key}] number of videos: {len(items)}")
 
@@ -68,7 +63,6 @@ def main(args):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--name', type=str, default="sim_test", help="task name")
     parser.add_argument('--data_dir', default="data", required=False, help="path to dataset dir")
     parser.add_argument('--k_neighbors', type=int, default=1, help="number of neighbors to use for KNN")
     parser.add_argument('-g', '--gpu_ids', type=int, default=0, required=False)
