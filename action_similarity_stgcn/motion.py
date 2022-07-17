@@ -1,22 +1,47 @@
-import enum
 import os
 import base64
-from typing import Dict, List, Union
-import requests
+import json
 import shutil
+import requests
+from pprint import pprint
+from typing import Dict, List, Union
 
+import torch
+import numpy as np
 from tqdm import tqdm
 from glob import glob
-import numpy as np
-import torch
 
 from action_similarity_stgcn.utils import sorted_sample
-
-from pprint import pprint
 
 def _coordinate_to_raw(coordinate):
     return np.array([coordinate['x'], coordinate['y']], dtype=float)
 
+def preprocess_keypoints_by_id(keypoints_by_id, device):
+    processed = {}
+    for id, keypoints in keypoints_by_id.items():
+        x_label = keypoints_to_tensor(keypoints)
+        x_label = normalize_1080p_to_ntu_distribution(x_label)
+        x_label = x_label.to(device)
+        processed[id] = x_label
+    return processed
+
+def normalize_1080p_to_ntu_distribution(x_labels):
+    # 1080p: 1920 x 1080
+    # NTU: max(3.209906 1.728893 5.110941), min(-2.834219 -2.15311 0.0)
+    x_max_o, x_min_o = 1920, 0 # origin 1080p
+    y_max_o, y_min_o = 1080, 0 # origin 1080p
+    
+    x_max_n, x_min_n = 3.2, -2.8
+    y_max_n, y_min_n = 1.7, -2.1
+    
+    x_rate = (x_max_n - x_min_n)/(x_max_o - x_min_o)
+    y_rate = (y_max_n - y_min_n)/(y_max_o - y_min_o)
+    
+    x_labels[:,:,:,0] = (x_labels[:,:,:,0] - x_min_o) * x_rate + x_min_n
+    x_labels[:,:,:,1] = (x_labels[:,:,:,1] - y_min_o) * y_rate + y_min_n
+    
+    return x_labels
+    
 def keypoints_to_tensor(keypoints: List[Dict]):
     assert len(keypoints) >= 32, f"The stgcn model need 32 frames at least but, {len(keypoints)}"
     sampled_keypoints = sorted_sample(keypoints, 32)
@@ -37,8 +62,6 @@ def keypoints_to_tensor(keypoints: List[Dict]):
         # 12 Right Hip: f37-f39
         # 13 Right Knee: f40-f42
         # 14 Right Ankle: f43-f45
-        # pprint(sampled_keypoint)
-        # breakpoint()
         sampled_keypoint = sampled_keypoint['keypoints']
         neck = (_coordinate_to_raw(sampled_keypoint['right_shoulder']) 
                 + _coordinate_to_raw(sampled_keypoint['left_shoulder']))/2
@@ -62,8 +85,7 @@ def keypoints_to_tensor(keypoints: List[Dict]):
         x_np[i,14] = _coordinate_to_raw(sampled_keypoint['right_ankle'])
 
     x_tensor = torch.from_numpy(x_np)
-    x_tensor.unsqueeze(0)
-    return x_tensor
+    return x_tensor.unsqueeze(0)
 
 # def keypoints_to_tensor(self, keypoints: List[Dict]):
 #     #x = np.zeros((1, 32, 15, 2))
@@ -91,6 +113,7 @@ def keypoints_to_tensor(keypoints: List[Dict]):
 #     # return concat of sampled processed_keypoints (1 32 15 2)
 
 def extract_keypoints(video_path: str, fps: int) -> Dict[int, Dict]:
+    
     # TODO
     # 1. convert brain skeleton format to bpe skeleton format
     # --> brain format 자체를 refined_skeleton과 동일하게 변경하거나,
@@ -117,14 +140,14 @@ def extract_keypoints(video_path: str, fps: int) -> Dict[int, Dict]:
     os.makedirs(json_path, exist_ok=True)
 
     clip = mpy.VideoFileClip(video_path)
-    for i, timestep in tqdm(enumerate(np.arange(0, clip.duration, 1 / fps))):
+    for i, timestep in enumerate(np.arange(0, clip.duration, 1 / fps)):
         frame_name = os.path.join(images_path, f'frame{i:03d}.jpg')
         clip.save_frame(frame_name, timestep)
 
     tracker_id = None
     url = 'https://brain.keai.io/vision'
     keypoints_by_id = {}
-    for i, filename in enumerate(tqdm(sorted(glob(f'{images_path}/*.jpg')))):
+    for i, filename in enumerate(sorted(glob(f'{images_path}/*.jpg'))):
         with open(filename, 'rb') as input_file:
             image_bytes = input_file.read()
         
@@ -133,6 +156,7 @@ def extract_keypoints(video_path: str, fps: int) -> Dict[int, Dict]:
                 url=f'{url}/keypoints',
                 json={
                     'image': base64.b64encode(image_bytes).decode(),
+                    'deviceID': 'demo',
                     'tracking': True,
                 })
         else:
@@ -140,10 +164,14 @@ def extract_keypoints(video_path: str, fps: int) -> Dict[int, Dict]:
                 url=f'{url}/keypoints/{tracker_id}',
                 json={
                     'image': base64.b64encode(image_bytes).decode(),
+                    'deviceID': 'demo',
                 }
             )
         response_json = response.json()
+        #breakpoint()
         for keypoints in response_json['keypoints']:
+            if 'track_id' not in keypoints:
+                continue
             track_id = keypoints['track_id']
             if track_id not in keypoints_by_id:
                 keypoints_by_id[track_id] = []
@@ -151,4 +179,11 @@ def extract_keypoints(video_path: str, fps: int) -> Dict[int, Dict]:
                 'frame': i,
                 'keypoints': keypoints,
             })
+        tracker_id = response_json['tracker_id']
+        
+    for id, keypoints in keypoints_by_id.items():
+        json_filename = f'track_id_{id:03d}.json'
+        with open(os.path.join(json_path, json_filename), 'w') as f:
+            json.dump(keypoints, f, indent=4)
+        
     return keypoints_by_id
