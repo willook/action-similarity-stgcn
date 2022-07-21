@@ -6,6 +6,9 @@ import numpy as np
 import torch
 from scipy.spatial.distance import cosine
 
+from stgcn.predictor import Predictor as STGCNEncoder
+from action_similarity_stgcn.motion import preprocess_keypoints_by_id
+
 if TYPE_CHECKING:
     from action_similarity_stgcn.database import ActionDatabase
     
@@ -14,14 +17,23 @@ class Predictor:
     def __init__(
         self, 
         std_db: ActionDatabase,
+        model_path: str,
         k_neighbors: int = 1,
         min_frames: int = 32,
-        threshold: float = 0.5
+        threshold: float = 0.5,
+        device: str = 'cuda',
+        model_name: str ='stgcn-recons'
     ):
         self.std_db = std_db
         self.min_frames = min_frames
         self.k_neighbors = k_neighbors
         self.threshold = threshold
+        self.device = device
+        self.stgcn_encoder = STGCNEncoder(
+            model_path=model_path,
+            device=device,
+            model_name=model_name
+        )
 
     def valid_frames(
         self,
@@ -30,7 +42,11 @@ class Predictor:
     
     def predict(
         self,
-        embedding_by_id: Dict[str, np.ndarray]):
+        keypoints_by_id: Dict[str, List]):
+
+        processed_keypoints_by_id = preprocess_keypoints_by_id(keypoints_by_id, self.device)
+        embedding_by_id = self.stgcn_encoder.encode(processed_keypoints_by_id)
+
         # keypoints_by_id 거르는 함수, 양식 맞추는 함수 필요
         predictions = []
         action_label_per_id = {}

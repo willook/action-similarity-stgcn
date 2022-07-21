@@ -5,12 +5,11 @@ import numpy as np
 import random
 from pathlib import Path
 
-from stgcn.predictor import Predictor as STGCNPredictor
-from action_similarity_stgcn.predictor import Predictor as KNNPredicor
+from action_similarity_stgcn.predictor import Predictor
 from action_similarity_stgcn.database import ActionDatabase
 from action_similarity_stgcn.utils import cache_file, Timer
 from action_similarity_stgcn.database import ActionDatabase
-from action_similarity_stgcn.motion import extract_keypoints, preprocess_keypoints_by_id
+from action_similarity_stgcn.motion import extract_keypoints
 
 random.seed(1234)
 
@@ -49,16 +48,14 @@ def main(args):
 
     print("Predict action...")
     timer.log("predict") 
-    stgcn_predictor = STGCNPredictor(
+    predictor = Predictor(
+        std_db=db,
         model_path=data_path / 'models/model-best.pkl',
         device=device,
         model_name='stgcn-recons')
-    knn_predictor = KNNPredicor(std_db=db)
 
-    processed_keypoints_by_id = preprocess_keypoints_by_id(keypoints_by_id, device)
-    embedding_by_id = stgcn_predictor.encode(processed_keypoints_by_id)
-    predictions = knn_predictor.predict(embedding_by_id)
-    action_label_per_id, similarities_per_id = knn_predictor.info()
+    predictions = predictor.predict(keypoints_by_id)
+    action_label_per_id, similarities_per_id = predictor.info()
 
     # print results
     for id in action_label_per_id:
@@ -66,7 +63,7 @@ def main(args):
         action_label = action_label_per_id[id]
         similarities_per_actions = similarities_per_id[id]
         for action, similarities in similarities_per_actions.items():
-            print(f"[{action}] mean similarity of {knn_predictor.std_db.actions[action]}: {np.mean(similarities)}")
+            print(f"[{action}] mean similarity of {predictor.std_db.actions[action]}: {np.mean(similarities)}")
         timer.log() 
         print(f"Predicted action is {db.actions[action_label]}")
         print(f"Predictions:\n{predictions}")
